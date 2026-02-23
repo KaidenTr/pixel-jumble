@@ -1,0 +1,11 @@
+ngrok http 5000
+
+Update Developer Portal Redirect URLs:
+https://GENERATED.ngrok-free.app/callback
+
+node index.js
+
+Update: 
+server/index.js
+client/src/App.js
+
