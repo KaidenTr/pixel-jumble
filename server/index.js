@@ -11,20 +11,25 @@ const port = process.env.PORT || 5000;
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const FRONTEND_URI = process.env.FRONTEND_URI || 'http://localhost:3000';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://1b9d-2601-646-a088-5690-b1ca-cea6-b2d7-dcbe.ngrok-free.app/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://faf2-2601-646-a088-5690-8889-5f1f-1174-1a5b.ngrok-free.app/callback';
 
 app.use(cors({
-  exposedHeaders: ['X-Reset-Guessed-List'],
+  exposedHeaders: ['X-Reset-Guessed-List'], // Allow frontend to read this custom header
 }));
 
+// =================== HELPER FUNCTION ===================
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // =================== AUTHENTICATION ROUTES ===================
 app.get('/login', (req, res) => {
   const scope = 'user-top-read';
-  const authUrl = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
-    response_type: 'code', client_id: CLIENT_ID, scope: scope, redirect_uri: REDIRECT_URI,
-  }).toString();
+  const authUrl = 'https://accounts.spotify.com/authorize?' +
+    new URLSearchParams({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      scope: scope,
+      redirect_uri: REDIRECT_URI,
+    }).toString();
   res.redirect(authUrl);
 });
 
@@ -32,8 +37,13 @@ app.get('/callback', async (req, res) => {
   const code = req.query.code || null;
   try {
     const response = await axios({
-      method: 'post', url: 'https://accounts.spotify.com/api/token',
-      data: new URLSearchParams({ grant_type: 'authorization_code', code: code, redirect_uri: REDIRECT_URI }).toString(),
+      method: 'post',
+      url: 'https://accounts.spotify.com/api/token',
+      data: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: REDIRECT_URI,
+      }).toString(),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Authorization': 'Basic ' + (Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64')),
@@ -49,7 +59,7 @@ app.get('/callback', async (req, res) => {
 
 // =================== GAME LOGIC ROUTE ===================
 app.get('/game-data', async (req, res) => {
-  // Use 'long_term' as the default time range
+  // Use 'long_term' as the default time range, but accept others
   const { access_token, exclude, time_range = 'long_term' } = req.query; 
   if (!access_token) {
     return res.status(400).json({ error: 'Access token not provided' });
@@ -99,7 +109,6 @@ app.get('/game-data', async (req, res) => {
     const artistPopularityHint = `The artist has a Spotify popularity score of ${artistDetailsResponse.data.popularity}/100.`;
     const primaryGenreHint = artistDetailsResponse.data.genres.length > 0 ? `One of the artist's primary genres is: ${artistDetailsResponse.data.genres[0]}` : null;
 
-
     let artistBirthDate = null;
     try {
       console.log(`  -> Searching MusicBrainz for artist: ${answerArtist.name}`);
@@ -115,40 +124,32 @@ app.get('/game-data', async (req, res) => {
       }
 
       if (correctMbArtist) {
-        console.log(`  -> Verified MusicBrainz artist: ${correctMbArtist.name}`);
         const wikidataRelation = correctMbArtist.relations?.find(rel => rel.type === 'wikidata');
         if (wikidataRelation) {
           const wikidataId = wikidataRelation.url.resource.split('/').pop();
-          console.log(`    -> Found Wikidata ID: ${wikidataId}. Fetching...`);
+          await sleep(1000); // Wait before hitting the next API
           const wikidataResponse = await axios.get(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&format=json&props=claims`);
           const claims = wikidataResponse.data.entities[wikidataId].claims;
           const birthDateClaim = claims.P569;
           if (birthDateClaim) {
             const birthDateValue = birthDateClaim[0].mainsnak.datavalue.value.time;
             artistBirthDate = new Date(birthDateValue.slice(1)).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-            console.log(`    -> SUCCESS: Found birth date from Wikidata: ${artistBirthDate}`);
           }
         }
         if (!artistBirthDate && correctMbArtist['life-span'] && correctMbArtist['life-span'].begin) {
           artistBirthDate = new Date(correctMbArtist['life-span'].begin).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-          console.log(`    -> WARNING: Using fallback birth date from MusicBrainz: ${artistBirthDate}`);
         }
       }
     } catch (e) {
       console.error(`  -> ERROR fetching external artist data: ${e.message}`);
     }
-
+    
     res.json({
-      albumId: answerAlbum.id,
-      albumName: answerAlbum.name,
-      simplifiedAlbumName: simplifiedAlbumName,
-      artistName: answerArtist.name,
-      coverUrl: answerAlbum.images[0].url,
-      releaseDate: answerAlbum.release_date,
+      albumId: answerAlbum.id, albumName: answerAlbum.name, simplifiedAlbumName: simplifiedAlbumName,
+      artistName: answerArtist.name, coverUrl: answerAlbum.images[0].url, releaseDate: answerAlbum.release_date,
       availableHints: {
-        playCount: `You have ${topTracks.filter(t => t.album.id === answerAlbum.id).length} song(s) from this album in your recent top tracks.`,
-        artistPopularity: artistPopularityHint,
-        primaryGenre: primaryGenreHint,
+        playCount: `You have ${topTracks.filter(t => t.album.id === answerAlbum.id).length} song(s) from this album in your top tracks for this period.`,
+        artistPopularity: artistPopularityHint, primaryGenre: primaryGenreHint,
         artistBirthDate: artistBirthDate ? `The artist was born on ${artistBirthDate}` : null,
       }
     });
