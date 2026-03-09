@@ -51,7 +51,8 @@ function App() {
         try {
           const guessedIds = getGuessedAlbums(timeRange);
           // Remember to update this URL for deployment
-          const response = await axios.get(`http://localhost:5000/game-data`, {
+          // const response = await axios.get(`http://localhost:5000/game-data`, {
+          const response = await axios.get(`https://pixel-jumble-backend.onrender.com/game-data`, {
             params: { 
               access_token: accessToken, 
               exclude: guessedIds.join(','),
@@ -134,12 +135,24 @@ function App() {
     setGameState('finished');
   };
 
-  if (!accessToken) {
+  /* 
+    if (!accessToken) {
     return (
       <div className="container">
         <h1>Pixel Jumble</h1>
         <p>Guess the album from your own Spotify history!</p>
         <a href="http://localhost:5000/login" className="login-button">Connect with Spotify</a>
+      </div>
+    );
+  } 
+  */
+
+    if (!accessToken) {
+    return (
+      <div className="container">
+        <h1>Pixel Jumble</h1>
+        <p>Guess the album from your own Spotify history!</p>
+        <a href="https://pixel-jumble-backend.onrender.com/login" className="login-button">Connect with Spotify</a>
       </div>
     );
   }
