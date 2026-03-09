@@ -11,7 +11,8 @@ const port = process.env.PORT || 5000;
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const FRONTEND_URI = process.env.FRONTEND_URI || 'http://localhost:3000';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://faf2-2601-646-a088-5690-8889-5f1f-1174-1a5b.ngrok-free.app/callback';
+// const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5000/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://830c-2601-646-a088-5690-d8d8-a00f-800d-13bc.ngrok-free.app/callback';
 
 app.use(cors({
   exposedHeaders: ['X-Reset-Guessed-List'], // Allow frontend to read this custom header
