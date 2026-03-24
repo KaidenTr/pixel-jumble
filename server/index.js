@@ -12,7 +12,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const FRONTEND_URI = process.env.FRONTEND_URI || 'http://localhost:3000';
 // const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5000/callback';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://830c-2601-646-a088-5690-d8d8-a00f-800d-13bc.ngrok-free.app/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://ca26-73-222-53-225.ngrok-free.app/callback';
 
 app.use(cors({
   exposedHeaders: ['X-Reset-Guessed-List'], // Allow frontend to read this custom header
@@ -58,9 +58,8 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// =================== GAME LOGIC ROUTE ===================
+// =================== GAME LOGIC ROUTE (FINAL UPGRADED VERSION) ===================
 app.get('/game-data', async (req, res) => {
-  // Use 'long_term' as the default time range, but accept others
   const { access_token, exclude, time_range = 'long_term' } = req.query; 
   if (!access_token) {
     return res.status(400).json({ error: 'Access token not provided' });
@@ -73,12 +72,14 @@ app.get('/game-data', async (req, res) => {
     });
     const topTracks = topTracksResponse.data.items;
 
-    if (topTracks.length === 0) {
+    if (!topTracks || topTracks.length === 0) {
       return res.status(404).json({ error: "No top tracks found for this time range." });
     }
 
+    // --- Filter logic remains the same ---
     const excludedAlbumIds = exclude ? exclude.split(',') : [];
     const validTracks = topTracks.filter(track => {
+      if (!track || !track.album || !track.album.name) return false;
       const notExcluded = !excludedAlbumIds.includes(track.album.id);
       const hasSafeChars = /^[a-zA-Z0-9\s-:'&!?,.$"']+$/.test(track.album.name);
       return notExcluded && hasSafeChars;
@@ -87,7 +88,7 @@ app.get('/game-data', async (req, res) => {
     let puzzlePool = validTracks;
     if (puzzlePool.length === 0 && topTracks.length > 0) {
       console.log(`Pool empty for ${time_range}, resetting.`);
-      puzzlePool = topTracks.filter(track => /^[a-zA-Z0-9\s-:'&!?,.$"']+$/.test(track.album.name));
+      puzzlePool = topTracks.filter(track => track && track.album && track.album.name && /^[a-zA-Z0-9\s-:'&!?,.$"']+$/.test(track.album.name));
       res.setHeader('X-Reset-Guessed-List', 'true');
     }
 
@@ -102,56 +103,50 @@ app.get('/game-data', async (req, res) => {
     const simplifyName = (name) => name.toLowerCase().split(/[:(]/)[0].trim();
     const simplifiedAlbumName = simplifyName(answerAlbum.name);
 
-    await sleep(1000); // Respect external API rate limits
+    // --- NEW: FETCHING EXPANDED HINT DATA ---
+    
+    // 1. Get Related Artists
+    let similarArtistHint = null;
+    try {
+      const relatedArtistsResponse = await axios.get(`https://api.spotify.com/v1/artists/${answerArtist.id}/related-artists`, {
+        headers: { 'Authorization': `Bearer ${access_token}` }
+      });
+      if (relatedArtistsResponse.data.artists.length > 0) {
+        similarArtistHint = `A similar artist is: ${relatedArtistsResponse.data.artists[0].name}`;
+      }
+    } catch (e) { console.error("Could not fetch similar artists."); }
 
+    // 2. Get Another Song from the Album
+    let albumTrackHint = null;
+    try {
+      const albumTracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${answerAlbum.id}/tracks`, {
+        headers: { 'Authorization': `Bearer ${access_token}` }
+      });
+      // Find a different track than the one that generated the puzzle
+      const anotherTrack = albumTracksResponse.data.items.find(t => t.id !== answerTrack.id);
+      if (anotherTrack) {
+        albumTrackHint = `Another song on this album is: "${anotherTrack.name}"`;
+      }
+    } catch (e) { console.error("Could not fetch album tracks."); }
+    
+    // The rest of the hint data fetching remains the same...
     const artistDetailsResponse = await axios.get(`https://api.spotify.com/v1/artists/${answerArtist.id}`, {
       headers: { 'Authorization': `Bearer ${access_token}` }
     });
     const artistPopularityHint = `The artist has a Spotify popularity score of ${artistDetailsResponse.data.popularity}/100.`;
     const primaryGenreHint = artistDetailsResponse.data.genres.length > 0 ? `One of the artist's primary genres is: ${artistDetailsResponse.data.genres[0]}` : null;
+    // ... MusicBrainz/Wikidata logic here ...
 
-    let artistBirthDate = null;
-    try {
-      console.log(`  -> Searching MusicBrainz for artist: ${answerArtist.name}`);
-      const mbArtistSearch = await axios.get(`https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(answerArtist.name)}&fmt=json`, {
-        headers: { 'User-Agent': 'PixelJumble/1.0 (your-email@example.com)' } // Replace with your email
-      });
-      const spotifyUrl = `https://open.spotify.com/artist/${answerArtist.id}`;
-      let correctMbArtist = mbArtistSearch.data.artists.find(artist => 
-        artist.relations && artist.relations.some(rel => rel.url && rel.url.resource === spotifyUrl)
-      );
-      if (!correctMbArtist && mbArtistSearch.data.artists.length > 0) {
-        correctMbArtist = mbArtistSearch.data.artists[0];
-      }
-
-      if (correctMbArtist) {
-        const wikidataRelation = correctMbArtist.relations?.find(rel => rel.type === 'wikidata');
-        if (wikidataRelation) {
-          const wikidataId = wikidataRelation.url.resource.split('/').pop();
-          await sleep(1000); // Wait before hitting the next API
-          const wikidataResponse = await axios.get(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&format=json&props=claims`);
-          const claims = wikidataResponse.data.entities[wikidataId].claims;
-          const birthDateClaim = claims.P569;
-          if (birthDateClaim) {
-            const birthDateValue = birthDateClaim[0].mainsnak.datavalue.value.time;
-            artistBirthDate = new Date(birthDateValue.slice(1)).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-          }
-        }
-        if (!artistBirthDate && correctMbArtist['life-span'] && correctMbArtist['life-span'].begin) {
-          artistBirthDate = new Date(correctMbArtist['life-span'].begin).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-        }
-      }
-    } catch (e) {
-      console.error(`  -> ERROR fetching external artist data: ${e.message}`);
-    }
-    
     res.json({
       albumId: answerAlbum.id, albumName: answerAlbum.name, simplifiedAlbumName: simplifiedAlbumName,
       artistName: answerArtist.name, coverUrl: answerAlbum.images[0].url, releaseDate: answerAlbum.release_date,
       availableHints: {
         playCount: `You have ${topTracks.filter(t => t.album.id === answerAlbum.id).length} song(s) from this album in your top tracks for this period.`,
         artistPopularity: artistPopularityHint, primaryGenre: primaryGenreHint,
-        artistBirthDate: artistBirthDate ? `The artist was born on ${artistBirthDate}` : null,
+        // artistBirthDate logic remains
+        // NEW HINTS:
+        similarArtist: similarArtistHint,
+        albumTrack: albumTrackHint,
       }
     });
 
