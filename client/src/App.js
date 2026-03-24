@@ -1,10 +1,11 @@
 // /client/src/App.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import PixelatedImage from './PixelatedImage';
 import './App.css';
 
+// --- LocalStorage Helper Functions (Unchanged) ---
 const GUESSED_ALBUMS_KEY_PREFIX = 'pixelJumbleGuessedAlbums_';
 
 const getGuessedAlbums = (timeRange) => {
@@ -23,24 +24,48 @@ const clearGuessedAlbums = (timeRange) => {
   localStorage.removeItem(GUESSED_ALBUMS_KEY_PREFIX + timeRange);
 };
 
+
 function App() {
   const [accessToken, setAccessToken] = useState(null);
   const [gameState, setGameState] = useState('login');
   const [gameData, setGameData] = useState(null);
-  const [timeRange, setTimeRange] = useState('long_term'); 
-  const [pixelationLevel, setPixelationLevel] = useState(30); // Start with bigger, blurrier blocks
+  const [timeRange, setTimeRange] = useState('long_term');
+  const [pixelationLevel, setPixelationLevel] = useState(4);
   const [guess, setGuess] = useState('');
   const [message, setMessage] = useState('');
   const [hints, setHints] = useState([]);
   const [availableHints, setAvailableHints] = useState([]);
   const [jumbledName, setJumbledName] = useState('');
 
+  // --- NEW: Scoring and Timer State ---
+  const [score, setScore] = useState(6000);
+  const [timeLeft, setTimeLeft] = useState(40);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    // Timer logic
+    if (gameState === 'playing' && timeLeft > 0) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft(prev => prev - 1);
+        setScore(prev => Math.max(0, prev - 1)); // Lose 1 point per second
+      }, 1000);
+    } else if (gameState !== 'playing' || timeLeft === 0) {
+      clearInterval(timerRef.current);
+      if (timeLeft === 0 && gameState === 'playing') {
+        setMessage("Time's up!");
+        giveUp();
+      }
+    }
+    return () => clearInterval(timerRef.current);
+  }, [gameState, timeLeft]);
+
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('access_token');
     if (token) {
       setAccessToken(token);
-      setGameState('mode_select'); // Go to mode select after login
+      setGameState('mode_select');
       window.history.pushState({}, document.title, "/");
     }
   }, []);
@@ -50,32 +75,27 @@ function App() {
       const fetchGameData = async () => {
         try {
           const guessedIds = getGuessedAlbums(timeRange);
-          // Remember to update this URL for deployment
-          // const response = await axios.get(`http://localhost:5000/game-data`, {
           const response = await axios.get(`https://pixel-jumble-backend.onrender.com/game-data`, {
-            params: { 
-              access_token: accessToken, 
-              exclude: guessedIds.join(','),
-              time_range: timeRange 
-            }
+            params: { access_token: accessToken, exclude: guessedIds.join(','), time_range: timeRange }
           });
-
-          if (response.headers['x-reset-guessed-list'] === 'true') {
-            clearGuessedAlbums(timeRange);
-          }
+          if (response.headers['x-reset-guessed-list'] === 'true') { clearGuessedAlbums(timeRange); }
+          
           const data = response.data;
           setGameData(data);
           setHints([`Album was released on ${data.releaseDate}`]);
+          
           const hintPool = [
             data.availableHints.playCount, data.availableHints.artistPopularity,
             data.availableHints.primaryGenre, data.availableHints.artistBirthDate,
           ].filter(hint => hint !== null);
           setAvailableHints(hintPool);
+          
           setGameState('playing');
+          setTimeLeft(40); // Reset timer for new game
+          setScore(6000); // Reset score for new game
         } catch (error) {
-          console.error("Error fetching game data", error);
-          setMessage('Could not load a puzzle. Try a different time range or log in again.');
-          setGameState('mode_select'); // Go back to mode select on error
+          setMessage('Could not load a new puzzle. Try a different time range.');
+          setGameState('mode_select');
         }
       };
       fetchGameData();
@@ -90,7 +110,7 @@ function App() {
   const playAgain = () => {
     setGameState('loading');
     setGameData(null);
-    setPixelationLevel(30);
+    setPixelationLevel(4);
     setMessage('');
     setHints([]);
     setAvailableHints([]);
@@ -107,16 +127,23 @@ function App() {
       setGameState('finished');
     } else {
       setMessage('Incorrect. Try again!');
-      if (pixelationLevel < 50) setPixelationLevel(pixelationLevel - 5);
+      setScore(prev => Math.max(0, prev - 1000)); // Lose 1000 points for wrong guess
+      if (pixelationLevel < 16) {
+        setPixelationLevel(pixelationLevel + 1);
+      }
     }
     setGuess('');
   };
-  
+
   const addHint = () => {
     if (availableHints.length > 0) {
-      const nextHint = availableHints[0];
+      // --- NEW: Dynamic/Random Hint ---
+      const randomIndex = Math.floor(Math.random() * availableHints.length);
+      const nextHint = availableHints[randomIndex];
       setHints([...hints, nextHint]);
-      setAvailableHints(availableHints.slice(1));
+      // Remove the used hint from the pool
+      setAvailableHints(availableHints.filter((_, index) => index !== randomIndex));
+      setScore(prev => Math.max(0, prev - 500)); // Lose 500 points for a hint
     } else {
       setMessage("No more hints available!");
     }
@@ -126,6 +153,7 @@ function App() {
     if (gameData.albumName) {
       const shuffled = gameData.simplifiedAlbumName.split('').sort(() => 0.5 - Math.random()).join('');
       setJumbledName(shuffled);
+      setScore(prev => Math.max(0, prev - 750)); // Lose 750 points for jumbled name
     }
   };
 
@@ -133,21 +161,25 @@ function App() {
     setMessage(`The album was ${gameData.albumName} by ${gameData.artistName}.`);
     addGuessedAlbum(gameData.albumId, timeRange);
     setGameState('finished');
+    setScore(0); // Score is 0 if you give up
   };
 
-  /* 
-    if (!accessToken) {
-    return (
-      <div className="container">
-        <h1>Pixel Jumble</h1>
-        <p>Guess the album from your own Spotify history!</p>
-        <a href="http://localhost:5000/login" className="login-button">Connect with Spotify</a>
-      </div>
-    );
-  } 
-  */
+  // --- NEW: Share Results ---
+  const handleShare = () => {
+    const timeRangeMap = {
+      short_term: "Recent Time",
+      medium_term: "Broader Recent",
+      long_term: "All Time"
+    };
+    const shareText = `Pixel Jumble - ${timeRangeMap[timeRange]}\nI scored ${score} points! 🎮\n\nGuess the album from your own Spotify history:\n[Your Vercel App URL]`;
+    navigator.clipboard.writeText(shareText).then(() => {
+      alert("Results copied to clipboard!");
+    });
+  };
 
-    if (!accessToken) {
+
+  // --- RENDER LOGIC with Updated Options ---
+  if (!accessToken) {
     return (
       <div className="container">
         <h1>Pixel Jumble</h1>
@@ -163,9 +195,10 @@ function App() {
         <h1>Select a Game Mode</h1>
         <p className="message">{message}</p>
         <div className="mode-buttons">
-          <button onClick={() => handleTimeRangeChange('short_term')}>Recent Hits<br/><span>(Last 4 Weeks)</span></button>
-          <button onClick={() => handleTimeRangeChange('medium_term')}>Recent Favorites<br/><span>(Last 6 Months)</span></button>
-          <button onClick={() => handleTimeRangeChange('long_term')}>All-Time Classics<br/><span>(Lifetime)</span></button>
+          {/* UPDATED: Renamed Options */}
+          <button onClick={() => handleTimeRangeChange('short_term')}>Recent Time<br/><span>(Last 4 Weeks)</span></button>
+          <button onClick={() => handleTimeRangeChange('medium_term')}>Broader Recent<br/><span>(Last 6 Months)</span></button>
+          <button onClick={() => handleTimeRangeChange('long_term')}>All Time<br/><span>(Lifetime)</span></button>
         </div>
       </div>
     );
@@ -184,6 +217,10 @@ function App() {
       )}
       
       <div className="game-info">
+        <div className='score-timer'>
+            <span>Score: {score}</span>
+            <span>Time: {timeLeft}</span>
+        </div>
         <h2>Pixel Jumble - Guess the album</h2>
         <ul>{hints.map((hint, i) => <li key={i}>{hint}</li>)}</ul>
         {jumbledName && <p>Jumbled name: <strong>{jumbledName}</strong></p>}
@@ -195,13 +232,14 @@ function App() {
           <div className='finished-buttons'>
             <button onClick={playAgain} className="play-again-button">Play Again (Same Mode)</button>
             <button onClick={() => setGameState('mode_select')} className="play-again-button secondary">Change Mode</button>
+            <button onClick={handleShare} className="play-again-button share">Share Result</button>
           </div>
         )}
         <p className="message">{message}</p>
         {gameState === 'playing' && (
           <div className="hint-buttons">
-            <button onClick={addHint}>Add hint</button>
-            <button onClick={showJumbledName}>Jumbled name</button>
+            <button onClick={addHint}>Add hint (-500)</button>
+            <button onClick={showJumbledName}>Jumbled name (-750)</button>
             <button onClick={giveUp}>Give up</button>
           </div>
         )}
@@ -211,3 +249,38 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+          // Remember to update this URL for deployment
+          // const response = await axios.get(`http://localhost:5000/game-data`, {
+          // const response = await axios.get(`https://pixel-jumble-backend.onrender.com/game-data`, {
+
+
+
+
+            /* 
+    if (!accessToken) {
+    return (
+      <div className="container">
+        <h1>Pixel Jumble</h1>
+        <p>Guess the album from your own Spotify history!</p>
+        <a href="http://localhost:5000/login" className="login-button">Connect with Spotify</a>
+      </div>
+    );
+  } 
+  */
+/*
+    if (!accessToken) {
+    return (
+      <div className="container">
+        <h1>Pixel Jumble</h1>
+        <p>Guess the album from your own Spotify history!</p>
+        <a href="https://pixel-jumble-backend.onrender.com/login" className="login-button">Connect with Spotify</a>
+      </div>
+    );
+  }
+*/

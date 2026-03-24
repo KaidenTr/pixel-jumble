@@ -1,14 +1,53 @@
-/* /client/src/App.css */
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #121212; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; text-align: center; }
-.container { background-color: #1e1e1e; padding: 40px; border-radius: 12px; max-width: 400px; }
-canvas {
-  border-radius: 8px;
-  filter: blur(0.5px); 
+/* Add these styles to the end of your App.css */
+
+.score-timer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.2em;
+  font-weight: bold;
+  margin-bottom: 15px;
+  color: #1DB954;
 }
-.login-button, .play-again-button { background-color: #1DB954; color: white; border: none; padding: 15px 30px; border-radius: 50px; font-size: 1em; font-weight: bold; text-decoration: none; cursor: pointer; display: inline-block; margin-top: 20px; }
-.game-info { background-color: #282828; border-radius: 8px; padding: 20px; margin-top: 20px; text-align: left; }
-.game-info ul { list-style: disc; padding-left: 20px; }
-.game-info input { width: 95%; padding: 10px; margin-top: 10px; border-radius: 5px; border: none; font-size: 1em; }
-.message { margin-top: 15px; font-weight: bold; min-height: 20px; }
-.hint-buttons { display: flex; justify-content: space-between; margin-top: 20px; }
-.hint-buttons button { background-color: #444; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; flex-grow: 1; margin: 0 5px; }
+
+.finished-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.play-again-button.secondary {
+  background-color: #535353;
+}
+
+.play-again-button.share {
+  background-color: #1DA1F2; /* Twitter Blue, good for sharing */
+}
+
+.mode-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.mode-buttons button {
+  background-color: #282828;
+  color: white;
+  border: 1px solid #444;
+  padding: 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.mode-buttons button:hover {
+  background-color: #333;
+}
+
+.mode-buttons button span {
+  font-size: 0.8em;
+  font-weight: normal;
+  color: #b3b3b3;
+}
