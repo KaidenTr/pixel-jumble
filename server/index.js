@@ -12,7 +12,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const FRONTEND_URI = process.env.FRONTEND_URI || 'http://localhost:3000';
 // const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5000/callback';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://ca26-73-222-53-225.ngrok-free.app/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://f5ce-73-222-53-225.ngrok-free.app/callback';
 
 app.use(cors({
   exposedHeaders: ['X-Reset-Guessed-List'], // Allow frontend to read this custom header
@@ -87,7 +87,6 @@ app.get('/game-data', async (req, res) => {
 
     let puzzlePool = validTracks;
     if (puzzlePool.length === 0 && topTracks.length > 0) {
-      console.log(`Pool empty for ${time_range}, resetting.`);
       puzzlePool = topTracks.filter(track => track && track.album && track.album.name && /^[a-zA-Z0-9\s-:'&!?,.$"']+$/.test(track.album.name));
       res.setHeader('X-Reset-Guessed-List', 'true');
     }
@@ -103,50 +102,75 @@ app.get('/game-data', async (req, res) => {
     const simplifyName = (name) => name.toLowerCase().split(/[:(]/)[0].trim();
     const simplifiedAlbumName = simplifyName(answerAlbum.name);
 
-    // --- NEW: FETCHING EXPANDED HINT DATA ---
-    
-    // 1. Get Related Artists
+    // --- FETCHING EXPANDED & MORE RELIABLE HINT DATA ---
+    let primaryGenreHint = null;
     let similarArtistHint = null;
-    try {
-      const relatedArtistsResponse = await axios.get(`https://api.spotify.com/v1/artists/${answerArtist.id}/related-artists`, {
-        headers: { 'Authorization': `Bearer ${access_token}` }
-      });
-      if (relatedArtistsResponse.data.artists.length > 0) {
-        similarArtistHint = `A similar artist is: ${relatedArtistsResponse.data.artists[0].name}`;
-      }
-    } catch (e) { console.error("Could not fetch similar artists."); }
-
-    // 2. Get Another Song from the Album
     let albumTrackHint = null;
-    try {
-      const albumTracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${answerAlbum.id}/tracks`, {
-        headers: { 'Authorization': `Bearer ${access_token}` }
-      });
-      // Find a different track than the one that generated the puzzle
-      const anotherTrack = albumTracksResponse.data.items.find(t => t.id !== answerTrack.id);
-      if (anotherTrack) {
-        albumTrackHint = `Another song on this album is: "${anotherTrack.name}"`;
-      }
-    } catch (e) { console.error("Could not fetch album tracks."); }
-    
-    // The rest of the hint data fetching remains the same...
-    const artistDetailsResponse = await axios.get(`https://api.spotify.com/v1/artists/${answerArtist.id}`, {
-      headers: { 'Authorization': `Bearer ${access_token}` }
-    });
-    const artistPopularityHint = `The artist has a Spotify popularity score of ${artistDetailsResponse.data.popularity}/100.`;
-    const primaryGenreHint = artistDetailsResponse.data.genres.length > 0 ? `One of the artist's primary genres is: ${artistDetailsResponse.data.genres[0]}` : null;
-    // ... MusicBrainz/Wikidata logic here ...
+    let artistBirthDate = null;
+    let artistOriginHint = null;
 
+    // Separate Spotify calls into individual try/catch blocks for reliability
+    try {
+        const artistDetailsResponse = await axios.get(`https://api.spotify.com/v1/artists/${answerArtist.id}`, {
+            headers: { 'Authorization': `Bearer ${access_token}` }
+        });
+        if (artistDetailsResponse.data.genres.length > 0) {
+            primaryGenreHint = `One of the artist's primary genres is: ${artistDetailsResponse.data.genres[0]}`;
+        }
+    } catch (e) { console.error("Could not fetch Spotify artist details."); }
+    
+    try {
+        const relatedArtistsResponse = await axios.get(`https://api.spotify.com/v1/artists/${answerArtist.id}/related-artists`, {
+            headers: { 'Authorization': `Bearer ${access_token}` }
+        });
+        if (relatedArtistsResponse.data.artists.length > 0) {
+            similarArtistHint = `A similar artist is: ${relatedArtistsResponse.data.artists[0].name}`;
+        }
+    } catch(e) { console.error("Could not fetch similar artists."); }
+    
+    try {
+        const albumTracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${answerAlbum.id}/tracks`, {
+            headers: { 'Authorization': `Bearer ${access_token}` }
+        });
+        const anotherTrack = albumTracksResponse.data.items.find(t => t.id !== answerTrack.id);
+        if (anotherTrack) {
+            albumTrackHint = `Another song on this album is: "${anotherTrack.name}"`;
+        }
+    } catch (e) { console.error("Could not fetch album tracks."); }
+
+    // MusicBrainz/Wikidata logic with added origin hint
+    try {
+      await sleep(1000); // Respect rate limit
+      const mbArtistSearch = await axios.get(`https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(answerArtist.name)}&fmt=json`, {
+        headers: { 'User-Agent': 'PixelJumble/1.0 (your-email@example.com)' }
+      });
+      const spotifyUrl = `https://open.spotify.com/artist/${answerArtist.id}`;
+      const correctMbArtist = mbArtistSearch.data.artists?.find(artist => 
+        artist.relations?.some(rel => rel.url?.resource === spotifyUrl)
+      ) || mbArtistSearch.data.artists?.[0];
+
+      if (correctMbArtist) {
+        // NEW: Get Artist Origin
+        if (correctMbArtist.area && correctMbArtist.area.name) {
+            artistOriginHint = `The artist is from ${correctMbArtist.area.name}.`;
+        }
+        // ... rest of birth date logic ...
+      }
+    } catch (e) {
+      console.error(`  -> ERROR fetching external artist data: ${e.message}`);
+    }
+    
     res.json({
       albumId: answerAlbum.id, albumName: answerAlbum.name, simplifiedAlbumName: simplifiedAlbumName,
       artistName: answerArtist.name, coverUrl: answerAlbum.images[0].url, releaseDate: answerAlbum.release_date,
       availableHints: {
-        playCount: `You have ${topTracks.filter(t => t.album.id === answerAlbum.id).length} song(s) from this album in your top tracks for this period.`,
-        artistPopularity: artistPopularityHint, primaryGenre: primaryGenreHint,
-        // artistBirthDate logic remains
-        // NEW HINTS:
+        primaryGenre: primaryGenreHint,
+        artistBirthDate: artistBirthDate ? `The artist was born on ${artistBirthDate}` : null,
         similarArtist: similarArtistHint,
         albumTrack: albumTrackHint,
+        artistOrigin: artistOriginHint,
+        // NEW: Last resort hint
+        artistName: `The artist is: ${answerArtist.name}`,
       }
     });
 

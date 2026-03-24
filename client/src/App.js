@@ -8,19 +8,20 @@ import './App.css';
 // LocalStorage Keys
 const GUESSED_ALBUMS_KEY_PREFIX = 'pixelJumbleGuessedAlbums_';
 const WIN_STREAK_KEY = 'pixelJumbleWinStreak';
+const TOTAL_SCORE_KEY = 'pixelJumbleTotalScore';
 
 // LocalStorage Helper Functions
 const getGuessedAlbums = (timeRange) => JSON.parse(localStorage.getItem(GUESSED_ALBUMS_KEY_PREFIX + timeRange) || '[]');
 const addGuessedAlbum = (albumId, timeRange) => {
   const key = GUESSED_ALBUMS_KEY_PREFIX + timeRange;
   const guessed = getGuessedAlbums(timeRange);
-  if (!guessed.includes(albumId)) {
-    localStorage.setItem(key, JSON.stringify([...guessed, albumId]));
-  }
+  if (!guessed.includes(albumId)) { localStorage.setItem(key, JSON.stringify([...guessed, albumId])); }
 };
 const getWinStreak = () => parseInt(localStorage.getItem(WIN_STREAK_KEY) || '0');
 const incrementWinStreak = () => localStorage.setItem(WIN_STREAK_KEY, getWinStreak() + 1);
 const resetWinStreak = () => localStorage.setItem(WIN_STREAK_KEY, '0');
+const getTotalScore = () => parseInt(localStorage.getItem(TOTAL_SCORE_KEY) || '0');
+const updateTotalScore = (newScore) => localStorage.setItem(TOTAL_SCORE_KEY, newScore);
 
 
 function App() {
@@ -28,34 +29,56 @@ function App() {
   const [gameState, setGameState] = useState('login');
   const [gameData, setGameData] = useState(null);
   const [timeRange, setTimeRange] = useState('long_term');
-  const [pixelationLevel, setPixelationLevel] = useState(3); // More aggressive pixelation
+  const [pixelationLevel, setPixelationLevel] = useState(20);
   const [guess, setGuess] = useState('');
   const [message, setMessage] = useState('');
   const [hints, setHints] = useState([]);
   const [availableHints, setAvailableHints] = useState([]);
+  const [artistRevealed, setArtistRevealed] = useState(false);
   
-  // NEW SCORING SYSTEM STATE
+  // --- NEW SCORING & GAME STATE ---
   const [score, setScore] = useState(0);
+  const [totalScore, setTotalScore] = useState(getTotalScore());
   const [winStreak, setWinStreak] = useState(getWinStreak());
+  const [guessesLeft, setGuessesLeft] = useState(5);
   const [timeLeft, setTimeLeft] = useState(40);
+  const [maxScore, setMaxScore] = useState(10000); // Max possible score for the round
   const timerRef = useRef(null);
   const infographicRef = useRef(null);
 
+  const endGame = useCallback((isWin) => {
+    if (gameState !== 'playing') return;
+
+    if (isWin) {
+      const timeBonus = timeLeft * 100;
+      const streakBonus = getWinStreak() > 0 ? (getWinStreak() * 250) : 0;
+      // The final score is capped by the maxScore (reduced if artist is revealed)
+      const finalScore = Math.min(maxScore, 1000 + timeBonus + streakBonus);
+      setScore(finalScore);
+      incrementWinStreak();
+      const newTotalScore = getTotalScore() + finalScore;
+      updateTotalScore(newTotalScore);
+      setTotalScore(newTotalScore);
+      setMessage(`Correct! It's ${gameData.albumName} by ${gameData.artistName}. You scored ${finalScore} points!`);
+    } else {
+      resetWinStreak();
+      setMessage(message || `Game Over! The album was ${gameData.albumName} by ${gameData.artistName}.`);
+    }
+    setWinStreak(getWinStreak());
+    setGameState('finished');
+    if (gameData) {
+      addGuessedAlbum(gameData.albumId, timeRange);
+    }
+  }, [gameData, timeLeft, timeRange, gameState, message, maxScore]);
+
   useEffect(() => {
-    // Timer logic: score goes down over time
     if (gameState === 'playing' && timeLeft > 0) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft(prev => prev - 1);
-      }, 1000);
-    } else if (gameState !== 'playing' || timeLeft === 0) {
-      clearInterval(timerRef.current);
-      if (timeLeft === 0 && gameState === 'playing') {
-        setMessage("Time's up! Game Over.");
-        endGame(false); // Game over, no win
-      }
+      timerRef.current = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+    } else if (timeLeft === 0 && gameState === 'playing') {
+      endGame(false);
     }
     return () => clearInterval(timerRef.current);
-  }, [gameState, timeLeft]);
+  }, [gameState, timeLeft, endGame]);
 
 
   useEffect(() => {
@@ -73,7 +96,8 @@ function App() {
       const fetchGameData = async () => {
         try {
           const guessedIds = getGuessedAlbums(timeRange);
-          const response = await axios.get(`https://pixel-jumble-backend.onrender.com/game-data/game-data`, {
+          // REVERTED TO LOCALHOST FOR TESTING
+          const response = await axios.get(`https://pixel-jumble-backend.onrender.com/game-data`, {
             params: { access_token: accessToken, exclude: guessedIds.join(','), time_range: timeRange }
           });
           if (response.headers['x-reset-guessed-list'] === 'true') {
@@ -83,16 +107,17 @@ function App() {
           setGameData(data);
           setHints([`Album was released on ${data.releaseDate}`]);
           const hintPool = [
-            data.availableHints.playCount, data.availableHints.artistPopularity,
-            data.availableHints.primaryGenre, data.availableHints.artistBirthDate,
-            data.availableHints.similarArtist, data.availableHints.albumTrack,
+            data.availableHints.primaryGenre,
+            data.availableHints.artistBirthDate,
+            data.availableHints.similarArtist,
+            data.availableHints.albumTrack,
           ].filter(hint => hint !== null);
           setAvailableHints(hintPool);
           setGameState('playing');
           setTimeLeft(40);
           setScore(0);
         } catch (error) {
-          setMessage('Could not load a puzzle. Try a different time range.');
+          setMessage('Could not load a new puzzle. Try a different time range.');
           setGameState('mode_select');
         }
       };
@@ -108,75 +133,84 @@ function App() {
   const playAgain = () => {
     setGameState('loading');
     setGameData(null);
-    setPixelationLevel(3);
+    setPixelationLevel(20);
     setMessage('');
     setHints([]);
     setAvailableHints([]);
-  };
-
-  const endGame = (isWin) => {
-    if (isWin) {
-      // Calculate final score based on time left, with a base score
-      const timeBonus = timeLeft * 100;
-      const streakBonus = getWinStreak() > 0 ? (getWinStreak() * 250) : 0;
-      const finalScore = 1000 + timeBonus + streakBonus;
-      setScore(finalScore);
-      incrementWinStreak();
-      setWinStreak(getWinStreak());
-      setMessage(`Correct! It's ${gameData.albumName}. Your score: ${finalScore}`);
-    } else {
-      // Game over on wrong guess or time up
-      resetWinStreak();
-      setWinStreak(0);
-      setScore(0);
-    }
-    setGameState('finished');
+    setGuessesLeft(5);
+    setArtistRevealed(false); // Reset artist revealed state
+    setMaxScore(10000); // Reset max score
   };
 
   const handleGuess = (e) => {
     e.preventDefault();
-    if (!guess) return;
+    if (!guess || gameState !== 'playing') return;
     const simplifiedGuess = guess.toLowerCase().trim();
+
     if (simplifiedGuess === gameData.simplifiedAlbumName) {
-      addGuessedAlbum(gameData.albumId, timeRange);
-      endGame(true); // Win!
+      endGame(true);
     } else {
-      setMessage('Incorrect! Game Over.');
-      endGame(false); // Lose!
+      const newGuessesLeft = guessesLeft - 1;
+      setGuessesLeft(newGuessesLeft);
+      if (newGuessesLeft <= 0) {
+        endGame(false);
+        setMessage(`Game Over! The album was ${gameData.albumName} by ${gameData.artistName}.`)
+      } else {
+        setMessage(`Incorrect. You have ${newGuessesLeft} guesses left.`);
+        if (pixelationLevel < 30) {
+          setPixelationLevel(pixelationLevel - 4.5);
+        }
+      }
     }
     setGuess('');
   };
 
   const addHint = () => {
-    if (availableHints.length > 0) {
-      const randomIndex = Math.floor(Math.random() * availableHints.length);
-      const nextHint = availableHints[randomIndex];
+    // Exclude the artist name hint from the regular pool
+    const regularHints = availableHints.filter(h => !h.startsWith("The artist is:"));
+    if (regularHints.length > 0) {
+      const randomIndex = Math.floor(Math.random() * regularHints.length);
+      const nextHint = regularHints[randomIndex];
       setHints([...hints, nextHint]);
-      setAvailableHints(availableHints.filter((_, index) => index !== randomIndex));
+      setAvailableHints(availableHints.filter(h => h !== nextHint));
     } else {
-      setMessage("No more hints available!");
+      setMessage("No more hints available (besides revealing the artist)!");
     }
   };
 
-  const handleShare = async () => {
-    if (!infographicRef.current) return;
-    try {
-        const dataUrl = await htmlToImage.toPng(infographicRef.current);
-        const blob = await (await fetch(dataUrl)).blob();
-        await navigator.clipboard.write([
-            new ClipboardItem({ 'image/png': blob })
-        ]);
-        alert("Results image copied to clipboard!");
-    } catch (error) {
-        console.error('Sharing failed:', error);
-        alert('Could not copy image. Feature may not be supported on your browser.');
+  const revealArtist = () => {
+    if (gameData && gameData.availableHints.artistName) {
+      setHints([...hints, gameData.availableHints.artistName]);
+      setArtistRevealed(true);
+      setMaxScore(2000); // Cap the max possible score for this round
+      setMessage("Artist revealed! Your max score for this round is now capped.");
     }
   };
+
+  const handleShare = useCallback(async () => {
+    if (!infographicRef.current) return;
+    try {
+      // Temporarily make it visible for capture
+      infographicRef.current.style.left = '0px';
+      const dataUrl = await htmlToImage.toPng(infographicRef.current, { quality: 0.95 });
+      // Hide it again
+      infographicRef.current.style.left = '-9999px';
+      
+      const blob = await (await fetch(dataUrl)).blob();
+      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      alert("Results image copied to clipboard!");
+    } catch (error) {
+      if (infographicRef.current) infographicRef.current.style.left = '-9999px';
+      console.error('Sharing failed:', error);
+      alert('Could not copy image. Feature may not be supported on your browser.');
+    }
+  }, []);
 
   const renderLogin = () => (
     <div className="container">
       <h1>Pixel Jumble</h1>
       <p>Guess the album from your own Spotify history!</p>
+      {/* REVERTED TO LOCALHOST FOR TESTING */}
       <a href="https://pixel-jumble-backend.onrender.com/login" className="login-button">Connect with Spotify</a>
     </div>
   );
@@ -184,7 +218,7 @@ function App() {
   const renderModeSelect = () => (
     <div className="container">
       <h1>Select a Game Mode</h1>
-      <p>Current Win Streak: {winStreak}</p>
+      <p>Total Score: {totalScore} | Current Win Streak: {winStreak}</p>
       <p className="message">{message}</p>
       <div className="mode-buttons">
         <button onClick={() => handleTimeRangeChange('short_term')}>Recent Time<br/><span>(Last 4 Weeks)</span></button>
@@ -199,8 +233,8 @@ function App() {
       <PixelatedImage imageUrl={gameData.coverUrl} pixelationLevel={pixelationLevel} />
       <div className="game-info">
         <div className='score-timer'>
-            <span>Score: {score}</span>
             <span>Time: {timeLeft}</span>
+            <span>Guesses: {guessesLeft}</span>
         </div>
         <h2>Pixel Jumble - Guess the album</h2>
         <ul>{hints.map((hint, i) => <li key={i}>{hint}</li>)}</ul>
@@ -210,46 +244,45 @@ function App() {
         <p className="message">{message}</p>
         <div className="hint-buttons">
           <button onClick={addHint}>Add Hint</button>
-          <button onClick={() => { setMessage('Game Over.'); endGame(false); }}>End Game</button>
+          <button onClick={revealArtist} className="reveal-button" disabled={artistRevealed}>Reveal Artist (Score Cap)</button>
+          <button onClick={() => endGame(false)}>End Game</button>
         </div>
       </div>
     </div>
   );
 
   const renderFinished = () => {
-      const guessedAlbums = getGuessedAlbums(timeRange);
-      return (
-        <div className="container">
-          <img src={gameData.coverUrl} alt={gameData.albumName} style={{ width: '300px', borderRadius: '8px' }}/>
-          <div className="game-info">
-            <div className='score-timer'>
-                <span>Final Score: {score}</span>
-                <span>Win Streak: {winStreak}</span>
-            </div>
-            <p className="message">{message}</p>
-            <div className='finished-buttons'>
-              <button onClick={playAgain} className="play-again-button">Play Again (Same Mode)</button>
-              <button onClick={() => setGameState('mode_select')} className="play-again-button secondary">Change Mode</button>
-              <button onClick={handleShare} className="play-again-button share">Share Result</button>
-            </div>
+    return (
+      <div className="container">
+        <img src={gameData.coverUrl} alt={gameData.albumName} style={{ width: '300px', borderRadius: '8px' }}/>
+        <div className="game-info">
+          <div className='score-timer'>
+              <span>Final Score: {score}</span>
+              <span>New Total Score: {totalScore}</span>
           </div>
-          {/* Hidden component for generating the share image */}
-          <div style={{ position: 'absolute', left: '-9999px' }}>
-              <div id="share-infographic" ref={infographicRef}>
-                  <h2>Pixel Jumble</h2>
-                  <p>My Score:</p>
-                  <p className="final-score">{score}</p>
-                  <p className="streak">Current Win Streak: {winStreak}</p>
-                  <div className="guessed-list">
-                    <p>Recently Guessed in this Mode:</p>
-                    <ul>
-                      {guessedAlbums.slice(-5).map(id => <li key={id}>- Guessed an album</li>)}
-                    </ul>
-                  </div>
-              </div>
+          <p className="message">{message}</p>
+          <p>Win Streak: {winStreak}</p>
+          <div className='finished-buttons'>
+            <button onClick={playAgain} className="play-again-button">Play Again (Same Mode)</button>
+            <button onClick={() => setGameState('mode_select')} className="play-again-button secondary">Change Mode</button>
+            <button onClick={handleShare} className="play-again-button share">Share Result</button>
           </div>
         </div>
-      );
+        {/* Hidden component for generating the share image */}
+        <div style={{ position: 'absolute', left: '-9999px' }}>
+            <div id="share-infographic" ref={infographicRef}>
+                <h2>Pixel Jumble</h2>
+                <p>My Score:</p>
+                <p className="final-score">{score}</p>
+                <p className="streak">Current Win Streak: {winStreak}</p>
+                <div className="guessed-list">
+                  <p>Guessed Today:</p>
+                  <ul><li>- {gameData.albumName}</li></ul>
+                </div>
+            </div>
+        </div>
+      </div>
+    );
   };
   
   if (!accessToken) return renderLogin();
