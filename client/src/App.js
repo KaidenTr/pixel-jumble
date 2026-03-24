@@ -1,6 +1,6 @@
 // /client/src/App.js
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // 1. Import useCallback
 import axios from 'axios';
 import PixelatedImage from './PixelatedImage';
 import './App.css';
@@ -37,17 +37,28 @@ function App() {
   const [availableHints, setAvailableHints] = useState([]);
   const [jumbledName, setJumbledName] = useState('');
 
-  // --- NEW: Scoring and Timer State ---
   const [score, setScore] = useState(6000);
   const [timeLeft, setTimeLeft] = useState(40);
   const timerRef = useRef(null);
+
+  // 2. Wrap the 'giveUp' function in useCallback
+  const giveUp = useCallback(() => {
+    // Check if gameData exists to prevent errors on initial render
+    if (gameData) {
+      setMessage(`The album was ${gameData.albumName} by ${gameData.artistName}.`);
+      addGuessedAlbum(gameData.albumId, timeRange);
+      setGameState('finished');
+      setScore(0); // Score is 0 if you give up
+    }
+  }, [gameData, timeRange]); // Dependencies of the giveUp function
+
 
   useEffect(() => {
     // Timer logic
     if (gameState === 'playing' && timeLeft > 0) {
       timerRef.current = setInterval(() => {
         setTimeLeft(prev => prev - 1);
-        setScore(prev => Math.max(0, prev - 1)); // Lose 1 point per second
+        setScore(prev => Math.max(0, prev - 1));
       }, 1000);
     } else if (gameState !== 'playing' || timeLeft === 0) {
       clearInterval(timerRef.current);
@@ -57,7 +68,7 @@ function App() {
       }
     }
     return () => clearInterval(timerRef.current);
-  }, [gameState, timeLeft]);
+  }, [gameState, timeLeft, giveUp]); // 3. Add the stable 'giveUp' function to the dependency array
 
 
   useEffect(() => {
@@ -91,8 +102,8 @@ function App() {
           setAvailableHints(hintPool);
           
           setGameState('playing');
-          setTimeLeft(40); // Reset timer for new game
-          setScore(6000); // Reset score for new game
+          setTimeLeft(40);
+          setScore(6000);
         } catch (error) {
           setMessage('Could not load a new puzzle. Try a different time range.');
           setGameState('mode_select');
@@ -127,7 +138,7 @@ function App() {
       setGameState('finished');
     } else {
       setMessage('Incorrect. Try again!');
-      setScore(prev => Math.max(0, prev - 1000)); // Lose 1000 points for wrong guess
+      setScore(prev => Math.max(0, prev - 1000));
       if (pixelationLevel < 16) {
         setPixelationLevel(pixelationLevel + 1);
       }
@@ -137,13 +148,11 @@ function App() {
 
   const addHint = () => {
     if (availableHints.length > 0) {
-      // --- NEW: Dynamic/Random Hint ---
       const randomIndex = Math.floor(Math.random() * availableHints.length);
       const nextHint = availableHints[randomIndex];
       setHints([...hints, nextHint]);
-      // Remove the used hint from the pool
       setAvailableHints(availableHints.filter((_, index) => index !== randomIndex));
-      setScore(prev => Math.max(0, prev - 500)); // Lose 500 points for a hint
+      setScore(prev => Math.max(0, prev - 500));
     } else {
       setMessage("No more hints available!");
     }
@@ -153,18 +162,10 @@ function App() {
     if (gameData.albumName) {
       const shuffled = gameData.simplifiedAlbumName.split('').sort(() => 0.5 - Math.random()).join('');
       setJumbledName(shuffled);
-      setScore(prev => Math.max(0, prev - 750)); // Lose 750 points for jumbled name
+      setScore(prev => Math.max(0, prev - 750));
     }
   };
 
-  const giveUp = () => {
-    setMessage(`The album was ${gameData.albumName} by ${gameData.artistName}.`);
-    addGuessedAlbum(gameData.albumId, timeRange);
-    setGameState('finished');
-    setScore(0); // Score is 0 if you give up
-  };
-
-  // --- NEW: Share Results ---
   const handleShare = () => {
     const timeRangeMap = {
       short_term: "Recent Time",
@@ -178,7 +179,6 @@ function App() {
   };
 
 
-  // --- RENDER LOGIC with Updated Options ---
   if (!accessToken) {
     return (
       <div className="container">
@@ -195,7 +195,6 @@ function App() {
         <h1>Select a Game Mode</h1>
         <p className="message">{message}</p>
         <div className="mode-buttons">
-          {/* UPDATED: Renamed Options */}
           <button onClick={() => handleTimeRangeChange('short_term')}>Recent Time<br/><span>(Last 4 Weeks)</span></button>
           <button onClick={() => handleTimeRangeChange('medium_term')}>Broader Recent<br/><span>(Last 6 Months)</span></button>
           <button onClick={() => handleTimeRangeChange('long_term')}>All Time<br/><span>(Lifetime)</span></button>
@@ -249,38 +248,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
-
-          // Remember to update this URL for deployment
-          // const response = await axios.get(`http://localhost:5000/game-data`, {
-          // const response = await axios.get(`https://pixel-jumble-backend.onrender.com/game-data`, {
-
-
-
-
-            /* 
-    if (!accessToken) {
-    return (
-      <div className="container">
-        <h1>Pixel Jumble</h1>
-        <p>Guess the album from your own Spotify history!</p>
-        <a href="http://localhost:5000/login" className="login-button">Connect with Spotify</a>
-      </div>
-    );
-  } 
-  */
-/*
-    if (!accessToken) {
-    return (
-      <div className="container">
-        <h1>Pixel Jumble</h1>
-        <p>Guess the album from your own Spotify history!</p>
-        <a href="https://pixel-jumble-backend.onrender.com/login" className="login-button">Connect with Spotify</a>
-      </div>
-    );
-  }
-*/
