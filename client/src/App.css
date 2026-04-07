@@ -77,6 +77,15 @@ canvas {
   cursor: pointer;
   flex-grow: 1;
 }
+.hint-buttons button.reveal-button {
+  background-color: #c93434; /* A warning red color */
+  font-weight: bold;
+}
+.hint-buttons button:disabled {
+  background-color: #222;
+  color: #666;
+  cursor: not-allowed;
+}
 
 /* --- UPDATED RULE --- */
 .score-timer {
@@ -156,4 +165,24 @@ canvas {
 #share-infographic .guessed-list ul {
     list-style: none;
     padding: 0;
+}
+
+.mode-buttons button.reveal-button {
+  background-color: #c93434; /* A warning red color */
+}
+
+/* Styles for the locked daily challenge button */
+.mode-buttons button:disabled {
+  background-color: #222;
+  color: #666;
+  cursor: not-allowed;
+  border-color: #333;
+}
+
+.mode-buttons button:disabled:hover {
+  background-color: #222; /* Prevent hover effect on disabled button */
+}
+
+.mode-buttons button:disabled span {
+  color: #555;
 }

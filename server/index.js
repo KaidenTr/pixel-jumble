@@ -11,8 +11,8 @@ const port = process.env.PORT || 5000;
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const FRONTEND_URI = process.env.FRONTEND_URI || 'http://localhost:3000';
-// const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5000/callback';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://f5ce-73-222-53-225.ngrok-free.app/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5000/callback';
+// const REDIRECT_URI = process.env.REDIRECT_URI || 'https://3f7e-73-222-53-225.ngrok-free.app/callback';
 
 app.use(cors({
   exposedHeaders: ['X-Reset-Guessed-List'], // Allow frontend to read this custom header
@@ -58,7 +58,7 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// =================== GAME LOGIC ROUTE (FINAL UPGRADED VERSION) ===================
+// =================== GAME LOGIC ROUTE ===================
 app.get('/game-data', async (req, res) => {
   const { access_token, exclude, time_range = 'long_term' } = req.query; 
   if (!access_token) {
