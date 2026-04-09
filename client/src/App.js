@@ -294,21 +294,6 @@ useEffect(() => {
     }
   };
 
-  const handleShare = useCallback(async () => {
-    if (!infographicRef.current) return;
-    try {
-      infographicRef.current.style.left = '0px';
-      const dataUrl = await htmlToImage.toPng(infographicRef.current, { pixelRatio: 2 });
-      infographicRef.current.style.left = '-9999px';
-      const blob = await (await fetch(dataUrl)).blob();
-      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
-      alert("Results image copied to clipboard!");
-    } catch (error) {
-      if (infographicRef.current) infographicRef.current.style.left = '-9999px';
-      alert('Could not copy image. Feature may not be supported on your browser.');
-    }
-  }, []);
-
   const renderLogin = () => (
     <div className="container fade-in-slide-up">
       <h1>Pixel Jumble</h1>
