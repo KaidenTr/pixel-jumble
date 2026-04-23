@@ -18,6 +18,16 @@ body {
   animation: gradient 15s ease infinite;
 }
 
+.app-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  width: 100%;
+  /* The background is set dynamically in App.js */
+  transition: background 0.8s ease-in-out;
+}
+
 @keyframes gradient {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
@@ -300,4 +310,36 @@ canvas {
 
 .disclaimer a:hover {
   color: #ffffff; /* Make the link white on hover */
+}
+
+.hint-buttons button.play-song-button {
+  background-color: #1ed760; /* A brighter, Spotify-like green */
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.hint-buttons button.play-song-button.playing {
+  animation: pulse 1.5s infinite;
+}
+
+.hint-buttons button.unavailable {
+  background-color: #282828;
+  border-color: #333;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.hint-buttons button.unavailable:hover {
+  background-color: #282828; /* Prevent hover effect */
+}
+
+.spotify-embed {
+  border-radius: 8px; /* Match the rounded corners of your design */
+  border: 1px solid #333; /* A subtle border to define its space */
+  margin-top: 20px; /* Add space between the message and the player */
+  margin-bottom: 20px; /* Add space between the player and the buttons */
 }

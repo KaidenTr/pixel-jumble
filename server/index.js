@@ -12,7 +12,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const FRONTEND_URI = process.env.FRONTEND_URI || 'http://localhost:3000';
 const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5000/callback';
-//const REDIRECT_URI = process.env.REDIRECT_URI || 'https://1d3c-73-222-53-225.ngrok-free.app/callback';
+// const REDIRECT_URI = process.env.REDIRECT_URI || 'https://0b43-73-222-53-225.ngrok-free.app/callback';
 
 app.use(cors({
   exposedHeaders: ['X-Reset-Guessed-List'], // Allow frontend to read this custom header
@@ -76,7 +76,6 @@ app.get('/game-data', async (req, res) => {
       return res.status(404).json({ error: "No top tracks found for this time range." });
     }
 
-    // --- Filter logic remains the same ---
     const excludedAlbumIds = exclude ? exclude.split(',') : [];
     const validTracks = topTracks.filter(track => {
       if (!track || !track.album || !track.album.name) return false;
@@ -108,6 +107,7 @@ app.get('/game-data', async (req, res) => {
     let albumTrackHint = null;
     let artistBirthDate = null;
     let artistOriginHint = null;
+    let songPreviewUrl = null;
 
     // Separate Spotify calls into individual try/catch blocks for reliability
     try {
@@ -129,9 +129,16 @@ app.get('/game-data', async (req, res) => {
     } catch(e) { console.error("Could not fetch similar artists."); }
     
     try {
-        const albumTracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${answerAlbum.id}/tracks`, {
-            headers: { 'Authorization': `Bearer ${access_token}` }
-        });
+        const albumTracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${answerAlbum.id}/tracks`, { headers: { 'Authorization': `Bearer ${access_token}` } });
+        const trackWithPreview = albumTracksResponse.data.items.find(t => t.preview_url);
+        
+        if (trackWithPreview) {
+          songPreviewUrl = trackWithPreview.preview_url;
+          console.log(`    -> SUCCESS: Found a song preview URL for "${answerAlbum.name}"`);
+        } else {
+          console.log(`    -> INFO: No tracks on album "${answerAlbum.name}" have a preview URL.`);
+        }
+
         const anotherTrack = albumTracksResponse.data.items.find(t => t.id !== answerTrack.id);
         if (anotherTrack) {
             albumTrackHint = `Another song on this album is: "${anotherTrack.name}"`;
@@ -140,7 +147,7 @@ app.get('/game-data', async (req, res) => {
 
     // MusicBrainz/Wikidata logic with added origin hint
     try {
-      await sleep(1000); // Respect rate limit
+      await sleep(1000);
       const mbArtistSearch = await axios.get(`https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(answerArtist.name)}&fmt=json`, {
         headers: { 'User-Agent': 'PixelJumble/1.0 (your-email@example.com)' }
       });
@@ -149,12 +156,28 @@ app.get('/game-data', async (req, res) => {
         artist.relations?.some(rel => rel.url?.resource === spotifyUrl)
       ) || mbArtistSearch.data.artists?.[0];
 
-      if (correctMbArtist) {
-        // NEW: Get Artist Origin
+if (correctMbArtist) {
+        // 1. Get Artist Origin
         if (correctMbArtist.area && correctMbArtist.area.name) {
             artistOriginHint = `The artist is from ${correctMbArtist.area.name}.`;
         }
-        // ... rest of birth date logic ...
+
+        // 2. Get Birth Date or Formation Date
+        if (correctMbArtist['life-span'] && correctMbArtist['life-span'].begin) {
+            const fullDate = correctMbArtist['life-span'].begin;
+            // Extract just the year for a better hint (e.g., "1994" instead of "1994-02-01")
+            const year = fullDate.split('-')[0]; 
+
+            // Check if it's a person or a group to make the hint phrasing natural
+            if (correctMbArtist.type === 'Person') {
+                artistBirthDateHint = `The artist was born in ${year}.`;
+            } else if (correctMbArtist.type === 'Group') {
+                artistBirthDateHint = `The group was formed in ${year}.`;
+            } else {
+                // Fallback for unknown types
+                artistBirthDateHint = `The artist's career/life began around ${year}.`;
+            }
+        }
       }
     } catch (e) {
       console.error(`  -> ERROR fetching external artist data: ${e.message}`);
@@ -169,8 +192,8 @@ app.get('/game-data', async (req, res) => {
         similarArtist: similarArtistHint,
         albumTrack: albumTrackHint,
         artistOrigin: artistOriginHint,
-        // NEW: Last resort hint
         artistName: `The artist is: ${answerArtist.name}`,
+        songPreviewUrl: songPreviewUrl,
       }
     });
 

@@ -6,6 +6,7 @@ import Modal from 'react-modal'; // NEW: Import Modal
 import PixelatedImage from './PixelatedImage';
 import ShareCard from './ShareCard';
 import * as htmlToImage from 'html-to-image';
+import { FastAverageColor } from 'fast-average-color';
 import './App.css';
 import './ShareCard.css'; // Import the new CSS file
 
@@ -46,6 +47,8 @@ const updateTotalScore = (newScore) => localStorage.setItem(TOTAL_SCORE_KEY, new
 const getDailyChallenge = () => JSON.parse(localStorage.getItem(DAILY_CHALLENGE_KEY) || '{ "completionTime": null }');
 const saveDailyCompletion = () => localStorage.setItem(DAILY_CHALLENGE_KEY, JSON.stringify({ completionTime: Date.now() }));
 
+const DEFAULT_BG = 'radial-gradient(circle at center, #1a1a1a 0%, #121212 70%)';
+
 function App() {
   const [accessToken, setAccessToken] = useState(null);
   const [gameState, setGameState] = useState('login');
@@ -58,6 +61,8 @@ function App() {
   const [hints, setHints] = useState([]);
   const [availableHints, setAvailableHints] = useState([]);
   const [artistRevealed, setArtistRevealed] = useState(false);
+  const [songHintUsed, setSongHintUsed] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [score, setScore] = useState(0);
   const [totalScore, setTotalScore] = useState(getTotalScore());
   const [winStreak, setWinStreak] = useState(getWinStreak());
@@ -69,9 +74,20 @@ function App() {
   const [didLose, setDidLose] = useState(false);
   const timerRef = useRef(null);
   const infographicRef = useRef(null);
+  const audioRef = useRef(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const openShareModal = () => setIsShareModalOpen(true);
   const closeShareModal = () => setIsShareModalOpen(false);
+  const [dominantColor, setDominantColor] = useState(DEFAULT_BG);
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setIsPlaying(false);
+    }
+  };
+
   const handleDownload = useCallback(async () => {
     if (!infographicRef.current) return;
     try {
@@ -134,6 +150,7 @@ useEffect(() => {
 
   const endGame = useCallback((isWin) => {
     if (gameState !== 'playing') return;
+    stopAudio();
     setDidLose(!isWin);
     if (isWin) {
       const timeBonus = timeLeft * 100;
@@ -189,6 +206,7 @@ useEffect(() => {
           const guessedIds = getGuessedAlbums(apiTimeRange);
           
           const response = await axios.get(`https://pixel-jumble-backend.onrender.com/game-data`, {
+          // const response = await axios.get(`http://localhost:5000/game-data`, {
             params: { access_token: accessToken, exclude: guessedIds.join(','), time_range: apiTimeRange }
           });
           
@@ -198,6 +216,18 @@ useEffect(() => {
           
           const data = response.data;
           setGameData(data);
+
+          const fac = new FastAverageColor();
+          fac.getColorAsync(data.coverUrl, { algorithm: 'dominant' })
+            .then(color => {
+              // Create a radial gradient from the color
+              const newBg = `radial-gradient(circle at center, ${color.hex}80 0%, #121212 70%)`;
+              setDominantColor(newBg);
+            })
+            .catch(e => {
+              console.error("Could not get dominant color:", e);
+              setDominantColor(DEFAULT_BG); // Fallback to default
+            });
           
           // --- NEW: Daily Challenge Hardcore Settings ---
           if (timeRange === 'daily_challenge') {
@@ -223,11 +253,24 @@ useEffect(() => {
         } catch (error) {
           setMessage('Could not load a new puzzle. Try a different time range.');
           setGameState('mode_select');
+          setDominantColor(DEFAULT_BG);
         }
       };
       fetchGameData();
     }
   }, [gameState, accessToken, timeRange]);
+
+  const renderContent = () => {
+    if (!accessToken) return renderLogin();
+    if (gameState === 'mode_select') return renderModeSelect();
+    if (gameState === 'loading' || !gameData) {
+      return <div className="container"><h2>Loading your puzzle...</h2></div>;
+    }
+    if (gameState === 'playing') return renderGame();
+    if (gameState === 'finished') return renderFinished();
+    return null;
+  };
+
 
   const handleTimeRangeChange = (newTimeRange) => {
     setTimeRange(newTimeRange);
@@ -235,6 +278,8 @@ useEffect(() => {
   };
 
   const playAgain = () => {
+    setDominantColor(DEFAULT_BG);
+    stopAudio();
     setGameState('loading');
     setGameData(null);
     setMessage('');
@@ -294,6 +339,31 @@ useEffect(() => {
     }
   };
 
+
+  const handlePlayHint = () => {
+    if (isPlaying) {
+      stopAudio();
+      return;
+    }
+
+    if (gameData?.availableHints?.songPreviewUrl && !songHintUsed) {
+      setScore(prev => Math.max(0, prev - 1500)); // Apply penalty
+      setSongHintUsed(true); // Mark as used
+      
+      const audio = new Audio(gameData.availableHints.songPreviewUrl);
+      audioRef.current = audio;
+
+      audio.onplay = () => setIsPlaying(true);
+      audio.onpause = () => setIsPlaying(false);
+      audio.onended = () => {
+        setIsPlaying(false);
+        audioRef.current = null;
+      };
+      
+      audio.play().catch(e => console.error("Audio playback failed:", e));
+    }
+  };
+
   const renderLogin = () => (
     <div className="container fade-in-slide-up">
       <h1>Pixel Jumble</h1>
@@ -326,6 +396,9 @@ useEffect(() => {
     </div>
   );
 
+
+
+
   const renderGame = () => (
     <div className="container fade-in-slide-up">
       <PixelatedImage imageUrl={gameData.coverUrl} pixelationLevel={pixelationLevel} />
@@ -342,17 +415,22 @@ useEffect(() => {
         <p className={`message ${messageStatus}`}>{message}</p>
         <div className="hint-buttons">
           <button onClick={addHint}>Add Hint 💡</button>
-          <button onClick={revealArtist} className="reveal-button" disabled={artistRevealed}>Reveal Artist (Score Cap) 🎤</button>
+          <button onClick={revealArtist} className="reveal-button" disabled={artistRevealed}>Reveal Artist (Reduced Score) 🎤</button>
           <button onClick={() => endGame(false)}>Give Up 🏳️</button>
         </div>
       </div>
     </div>
   );
 
+  
+
   const renderFinished = () => {
+    if (!gameData) return null;
+    const spotifyEmbedUrl = `https://open.spotify.com/embed/album/${gameData.albumId}`;
     const showContinue = !(timeRange === 'daily_challenge' && didLose);
     const recentGuesses = getGuessedAlbums(timeRange);
     return (
+      
       <div className="container fade-in-slide-up">
         <img src={gameData.coverUrl} alt={gameData.albumName} style={{ width: '300px', borderRadius: '8px' }}/>
         <div className="game-info">
@@ -362,6 +440,18 @@ useEffect(() => {
           </div>
           <p className={`message ${messageStatus}`}>{message}</p>
           <p>Current Win Streak: {winStreak}</p>
+
+          <iframe
+            className="spotify-embed"
+            src={spotifyEmbedUrl}
+            width="100%"
+            height="380" // A good default height for album embeds
+            frameBorder="0"
+            allow="encrypted-media"
+            title="Spotify Player"
+            loading="lazy" // Improves performance
+          ></iframe>
+
           <div className='finished-buttons'>
             {showContinue && (
               <button onClick={playAgain} className="play-again-button">Continue ⏭️</button>
@@ -400,11 +490,14 @@ useEffect(() => {
     );
   };
   
+  <div className="app-wrapper" style={{ background: dominantColor }}></div>
   if (!accessToken) return renderLogin();
   if (gameState === 'mode_select') return renderModeSelect();
   if (gameState === 'loading' || !gameData) return <div className="container"><h2>Loading your puzzle...</h2></div>;
   if (gameState === 'playing') return renderGame();
   if (gameState === 'finished') return renderFinished();
 }
+
+
 
 export default App;
