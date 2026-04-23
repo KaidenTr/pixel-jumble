@@ -345,7 +345,7 @@ useEffect(() => {
       
       audio.play().catch(e => console.error("Audio playback failed:", e));
     }
-  };
+
 
   const renderLogin = () => (
     <div className="container fade-in-slide-up">
@@ -408,12 +408,10 @@ useEffect(() => {
   
 
   const renderFinished = () => {
-    if (!gameData) return null;
     const spotifyEmbedUrl = `https://open.spotify.com/embed/album/${gameData.albumId}`;
     const showContinue = !(timeRange === 'daily_challenge' && didLose);
     const recentGuesses = getGuessedAlbums(timeRange);
     return (
-      
       <div className="container fade-in-slide-up">
         <img src={gameData.coverUrl} alt={gameData.albumName} style={{ width: '300px', borderRadius: '8px' }}/>
         <div className="game-info">
