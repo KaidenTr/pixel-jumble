@@ -61,7 +61,6 @@ function App() {
   const [hints, setHints] = useState([]);
   const [availableHints, setAvailableHints] = useState([]);
   const [artistRevealed, setArtistRevealed] = useState(false);
-  const [songHintUsed, setSongHintUsed] = useState(false);
   const [score, setScore] = useState(0);
   const [totalScore, setTotalScore] = useState(getTotalScore());
   const [winStreak, setWinStreak] = useState(getWinStreak());
@@ -257,6 +256,7 @@ useEffect(() => {
 
   const playAgain = () => {
     setDominantColor(DEFAULT_BG);
+
     setGameState('loading');
     setGameData(null);
     setMessage('');
@@ -348,6 +348,9 @@ useEffect(() => {
       </div>
     </div>
   );
+
+
+
 
   const renderGame = () => (
     <div className="container fade-in-slide-up">
