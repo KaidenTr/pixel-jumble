@@ -140,7 +140,6 @@ useEffect(() => {
 
   const endGame = useCallback((isWin) => {
     if (gameState !== 'playing') return;
-    stopAudio();
     setDidLose(!isWin);
     if (isWin) {
       const timeBonus = timeLeft * 100;
@@ -258,7 +257,6 @@ useEffect(() => {
 
   const playAgain = () => {
     setDominantColor(DEFAULT_BG);
-    stopAudio();
     setGameState('loading');
     setGameData(null);
     setMessage('');
@@ -319,24 +317,6 @@ useEffect(() => {
   };
 
 
-    if (gameData?.availableHints?.songPreviewUrl && !songHintUsed) {
-      setScore(prev => Math.max(0, prev - 1500)); // Apply penalty
-      setSongHintUsed(true); // Mark as used
-      
-      const audio = new Audio(gameData.availableHints.songPreviewUrl);
-      audioRef.current = audio;
-
-      audio.onplay = () => setIsPlaying(true);
-      audio.onpause = () => setIsPlaying(false);
-      audio.onended = () => {
-        setIsPlaying(false);
-        audioRef.current = null;
-      };
-      
-      audio.play().catch(e => console.error("Audio playback failed:", e));
-    }
-
-
   const renderLogin = () => (
     <div className="container fade-in-slide-up">
       <h1>Pixel Jumble</h1>
@@ -368,9 +348,6 @@ useEffect(() => {
       </div>
     </div>
   );
-
-
-
 
   const renderGame = () => (
     <div className="container fade-in-slide-up">
