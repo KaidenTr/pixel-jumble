@@ -62,7 +62,6 @@ function App() {
   const [availableHints, setAvailableHints] = useState([]);
   const [artistRevealed, setArtistRevealed] = useState(false);
   const [songHintUsed, setSongHintUsed] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [score, setScore] = useState(0);
   const [totalScore, setTotalScore] = useState(getTotalScore());
   const [winStreak, setWinStreak] = useState(getWinStreak());
@@ -74,19 +73,10 @@ function App() {
   const [didLose, setDidLose] = useState(false);
   const timerRef = useRef(null);
   const infographicRef = useRef(null);
-  const audioRef = useRef(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const openShareModal = () => setIsShareModalOpen(true);
   const closeShareModal = () => setIsShareModalOpen(false);
   const [dominantColor, setDominantColor] = useState(DEFAULT_BG);
-
-  const stopAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-      setIsPlaying(false);
-    }
-  };
 
   const handleDownload = useCallback(async () => {
     if (!infographicRef.current) return;
