@@ -260,17 +260,6 @@ useEffect(() => {
     }
   }, [gameState, accessToken, timeRange]);
 
-  const renderContent = () => {
-    if (!accessToken) return renderLogin();
-    if (gameState === 'mode_select') return renderModeSelect();
-    if (gameState === 'loading' || !gameData) {
-      return <div className="container"><h2>Loading your puzzle...</h2></div>;
-    }
-    if (gameState === 'playing') return renderGame();
-    if (gameState === 'finished') return renderFinished();
-    return null;
-  };
-
 
   const handleTimeRangeChange = (newTimeRange) => {
     setTimeRange(newTimeRange);
@@ -339,12 +328,6 @@ useEffect(() => {
     }
   };
 
-
-  const handlePlayHint = () => {
-    if (isPlaying) {
-      stopAudio();
-      return;
-    }
 
     if (gameData?.availableHints?.songPreviewUrl && !songHintUsed) {
       setScore(prev => Math.max(0, prev - 1500)); // Apply penalty
