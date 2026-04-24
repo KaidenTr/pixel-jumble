@@ -4,7 +4,8 @@ A personalized "guess the album" music trivia game powered by your Spotify liste
 
 **Live Demo:** **[Play Pixel Jumble Here!](https://pixel-jumble.vercel.app)** 
  
-*(Important: Take a screenshot of your finished app and replace this link!)*
+<img width="770" height="640" alt="image" src="https://github.com/user-attachments/assets/2cc745d2-a30c-4b32-94c0-f229e76f4b74" />
+
 
 > **Note on Public Access:** Due to recent changes in Spotify's API policy, this application must remain in "Development Mode." To try the live demo, please email **khantran@outlook.com** to have your Spotify account added to the user list.
 
